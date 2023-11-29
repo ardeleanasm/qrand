@@ -1,20 +1,20 @@
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE ViewPatterns      #-}
-
+{-# LANGUAGE OverloadedStrings #-}
 module Main where
 
 import           Control.Applicative
-
+import           JsonParser
+import           System.Exit 
+import           Data.Either
 
 data QRandValue
-  = QNull
-  | QInts [Int]
-  | QDoubles [Double]
+  = QDoubles [Double]
   deriving (Show, Eq)
 
 newtype QRand a = QRand
   {
-    runQRand :: String -> Maybe a
+    runQRand :: [Double] -> Maybe a
   }
 
 instance Functor QRand where
@@ -45,17 +45,37 @@ instance Monad QRand where
 
 
 
-qrandNull :: QRand QRandValue
-qrandNull = (\_ -> QNull) <$> pure QNull
 
-qrandIntArray::QRand QRandValue
-qrandIntArray = pure $ QInts [1,2,3]
+
 
 qrandDoubleArray::QRand QRandValue
-qrandDoubleArray = pure $ QDoubles [1.0, 2.0, 3.0]
+qrandDoubleArray = pure $ QDoubles [1,2,3]
 
-qrandRequest::QRand QRandValue
-qrandRequest = qrandNull <|> qrandIntArray <|> qrandDoubleArray
+qrandRequest::String -> QRand QRandValue
+qrandRequest s = pure $ QDoubles xs
+  where
+    xs = stringToList s
+
+
+
+
+stringToList :: String -> [Double]
+stringToList s = read s ::[Double]
+
+
 
 main :: IO ()
-main = putStrLn "Hello World"
+main = do
+  let inputString = "[1,2,3,4,5]"
+      result = stringToList inputString
+  putStrLn ( "Parsed string: " ++ show result)
+--  putStrLn "Parsing [1,2,3,4,5]"
+--  case runParser jsonValue $ Input 0 "[1.5,2.6,3.2]" of
+--    Right (input, resultJson) -> do
+--      putStrLn ("Success " ++ show resultJson)
+--    Left (ParserError loc msg) -> do
+--      putStrLn $ "Error: Parser failed at character " ++ show loc ++ ": " ++msg
+
+
+
+
