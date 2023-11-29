@@ -1,12 +1,22 @@
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE ViewPatterns      #-}
 
-module Main where
+-- implementation made after Tsoding's JSON Parser available on https://github.com/tsoding/haskell-json/
+module JsonParser
+  (
+    JsonValue
+  , Input(..)
+  , ParserError(..)
+  , Parser(..)
+  , jsonValue
+  )
+  
+ where
 
 import           Control.Applicative
 import           Data.Char
 import           Numeric
-import           System.Exit
+
 
 data Input = Input
   { inputLoc :: Int
@@ -58,9 +68,7 @@ instance Alternative Parser where
   (Parser p1) <|> (Parser p2) =
     Parser $ \input -> p1 input <|> p2 input
 
--- | Parser for null json
-jsonNull :: Parser JsonValue
-jsonNull = JsonNull <$ stringP "null"
+
 
 -- | Create a parser for a single specific character
 charP :: Char         -- The single character to find in the input
@@ -93,12 +101,6 @@ stringP str =
           ("Expected \"" ++ str ++ "\", but found \"" ++ inputStr input ++ "\"")
       result -> result
 
--- | Create a parser for boolean values
-jsonBool :: Parser JsonValue
-jsonBool = jsonTrue <|> jsonFalse
-  where
-    jsonTrue = JsonBool True <$ stringP "true"
-    jsonFalse = JsonBool False <$ stringP "false"
 
 -- | Parser of strings where all characters satifsfy a predicate
 spanP :: String           -- description
@@ -153,9 +155,7 @@ doubleFromParts :: Integer  -- sign
 doubleFromParts sign int dec expo =
   fromIntegral sign * (fromIntegral int + dec) * (10 ^^ expo)
 
--- | Parser for json number values
-jsonNumber :: Parser JsonValue
-jsonNumber = JsonNumber <$> doubleLiteral
+
 
 -- | Parser for characters as unicode in input
 escapeUnicode :: Parser Char
@@ -181,10 +181,6 @@ normalChar = parseIf "non-special character" ((&&) <$> (/= '"') <*> (/= '\\'))
 stringLiteral :: Parser String
 stringLiteral = charP '"' *> many (normalChar <|> escapeChar) <* charP '"'
 
--- | Parser of literal json string values
-jsonString :: Parser JsonValue
-jsonString = JsonString <$> stringLiteral
-
 -- | Parser for white spaces
 ws :: Parser String
 ws = spanP "whitespace character" isSpace
@@ -195,6 +191,27 @@ sepBy :: Parser a   -- Parser for the separators
       -> Parser b   -- Parser for elements
       -> Parser [b]
 sepBy sep element = (:) <$> element <*> many (sep *> element) <|> pure []
+
+-- | Parser for null json
+jsonNull :: Parser JsonValue
+jsonNull = JsonNull <$ stringP "null"
+
+-- | Create a parser for boolean values
+jsonBool :: Parser JsonValue
+jsonBool = jsonTrue <|> jsonFalse
+  where
+    jsonTrue = JsonBool True <$ stringP "true"
+    jsonFalse = JsonBool False <$ stringP "false"
+
+
+
+-- | Parser for json double values
+jsonNumber :: Parser JsonValue
+jsonNumber = JsonNumber <$> doubleLiteral
+
+-- | Parser of literal json string values
+jsonString :: Parser JsonValue
+jsonString = JsonString <$> stringLiteral
 
 -- | Parser for json arrays
 jsonArray :: Parser JsonValue
@@ -216,73 +233,4 @@ jsonValue =
   jsonNull <|> jsonBool <|> jsonNumber <|> jsonString <|> jsonArray <|>
   jsonObject
 
--- | Apply parser to content of file
-parseFile :: FilePath                 -- File path to parse
-          -> Parser a                 -- Parser to use
-          -> IO (Either ParserError a)
-parseFile fileName parser = do
-  input <- readFile fileName
-  case runParser parser $ Input 0 input of
-    Left e       -> return $ Left e
-    Right (_, x) -> return $ Right x
 
--- >>> main
--- [INFO] JSON:
--- {
---     "hello": [false, true, null, 42, "foo\n\u1234\"", [1, -2, 3.1415, 4e-6, 5E6, 0.123e+1]],
---     "world": null
--- }
--- <BLANKLINE>
--- [INFO] Parsed as: JsonObject [("hello",JsonArray [JsonBool False,JsonBool True,JsonNull,JsonNumber 42.0,JsonString "foo\n\4660\"",JsonArray [JsonNumber 1.0,JsonNumber (-2.0),JsonNumber 3.1415,JsonNumber 4.0e-6,JsonNumber 5000000.0,JsonNumber 1.23]]),("world",JsonNull)]
--- [INFO] Remaining input (codes): [10]
--- [SUCCESS] Parser produced expected result.
---
-
-main :: IO ()
-main = do
-  putStrLn "[INFO] JSON:"
-  putStrLn testJsonText
-  case runParser jsonValue $ Input 0 testJsonText of
-    Right (input, actualJsonAst) -> do
-      putStrLn ("[INFO] Parsed as: " ++ show actualJsonAst)
-      putStrLn
-        ("[INFO] Remaining input (codes): " ++ show (map ord $ inputStr input))
-      if actualJsonAst == expectedJsonAst
-        then putStrLn "[SUCCESS] Parser produced expected result."
-        else do
-          putStrLn
-            ("[ERROR] Parser produced unexpected result. Expected result was: " ++
-             show expectedJsonAst)
-          exitFailure
-    Left (ParserError loc msg) -> do
-      putStrLn $
-        "[ERROR] Parser failed at character " ++ show loc ++ ": " ++ msg
-      exitFailure
-  where
-    testJsonText =
-      unlines
-        [ "{"
-        , "    \"hello\": [false, true, null, 42, \"foo\\n\\u1234\\\"\", [1, -2, 3.1415, 4e-6, 5E6, 0.123e+1]],"
-        , "    \"world\": null"
-        , "}"
-        ]
-    expectedJsonAst =
-      JsonObject
-        [ ( "hello"
-          , JsonArray
-              [ JsonBool False
-              , JsonBool True
-              , JsonNull
-              , JsonNumber 42
-              , JsonString "foo\n\4660\""
-              , JsonArray
-                  [ JsonNumber 1.0
-                  , JsonNumber (-2.0)
-                  , JsonNumber 3.1415
-                  , JsonNumber 4e-6
-                  , JsonNumber 5000000
-                  , JsonNumber 1.23
-                  ]
-              ])
-        , ("world", JsonNull)
-        ]
